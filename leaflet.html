@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Route Tracking with Continuous Location Update</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+            crossorigin=""></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+
+    <style>
+        #map { height: 600px; width: 100%; margin-top: 20px; }
+        #search-bar { margin: 20px 0; }
+        #eta { font-size: 1.2em; margin-top: 10px; }
+        .button { margin: 5px; padding: 10px 20px; font-size: 1em; }
+    </style>
+</head>
+<body>
+    
+    <h1>Live Route Tracking with Continuous Location Update</h1>
+    
+    <div id="search-bar">
+        <input type="text" id="destination" placeholder="Enter destination address">
+        <button class="button" onclick="findRoute()">Find Route</button>
+    </div>
+
+    <div id="map"></div>
+    <div id="eta"></div> <!-- ETA Display Section -->
+
+    <script>
+        var map = L.map('map').setView([51.505, -0.09], 13); // Default map view
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        var userMarker, routingControl, destinationLatLng, watchID;
+
+        // Function to start continuously tracking the user's location and update the route
+        function startContinuousTracking() {
+            if (navigator.geolocation) {
+                // WatchPosition continuously monitors location changes
+                watchID = navigator.geolocation.watchPosition(function(position) {
+                    var userLat = position.coords.latitude;
+                    var userLon = position.coords.longitude;
+
+                    // Update the user's marker location
+                    if (!userMarker) {
+                        userMarker = L.marker([userLat, userLon]).addTo(map)
+                            .bindPopup("Your current location")
+                            .openPopup();
+                    } else {
+                        userMarker.setLatLng([userLat, userLon]); // Update marker position
+                    }
+
+                    // Center the map on the user's new location
+                    map.setView([userLat, userLon], 13);
+
+                    // Update the route if destination is set
+                    if (destinationLatLng) {
+                        if (routingControl) {
+                            map.removeControl(routingControl);
+                        }
+
+                        routingControl = L.Routing.control({
+                            waypoints: [
+                                L.latLng(userLat, userLon),  // New starting point: user's location
+                                destinationLatLng           // Destination
+                            ],
+                            routeWhileDragging: true,
+                            show: true,
+                            addWaypoints: false,
+                            createMarker: function() { return null; }  // Hide additional markers
+                        }).addTo(map);
+
+                        // Update ETA information based on the new route
+                        routingControl.on('routesfound', function(e) {
+                            var route = e.routes[0];
+                            var distance = route.summary.totalDistance / 1000; // Distance in km
+                            
+                            var speed = 5; // Assume a speed of 5 km/h for ETA calculation
+                            var travelTime = distance / speed; // Time in hours
+                            
+                            var hours = Math.floor(travelTime);
+                            var minutes = Math.round((travelTime - hours) * 60);
+                            
+                           
+                        });
+                    }
+
+                }, function(error) {
+                    alert("Unable to retrieve location. Please check permissions.");
+                });
+            } else {
+                alert("Geolocation is not supported by this browser.");
+            }
+        }
+
+        // Function to start the route calculation with the destination
+        function findRoute() {
+            var destinationAddress = document.getElementById("destination").value;
+            if (!destinationAddress) {
+                document.getElementById("eta").textContent = "Please enter a destination address.";
+                return;
+            }
+
+            // Geocode the destination address
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destinationAddress)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length === 0) {
+                        document.getElementById("eta").textContent = "Location not found. Please enter a valid address.";
+                        return;
+                    }
+
+                    var destLat = parseFloat(data[0].lat);
+                    var destLon = parseFloat(data[0].lon);
+                    destinationLatLng = L.latLng(destLat, destLon);
+
+                    // Start continuous location tracking and route updating
+                    startContinuousTracking();
+                })
+                .catch(error => {
+                    console.error("Error fetching geocoding data:", error);
+                    document.getElementById("eta").textContent = "An error occurred while finding the location.";
+                });
+        }
+    </script>
+</body>
+</html>
